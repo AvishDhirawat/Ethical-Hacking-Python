@@ -7,7 +7,7 @@ from scapy.layers import http # Third party module to filter http requests
 
 def sniff(interface):
     #scapy.sniff(iface = interface, store = False, prn = process_sniffed_packet, filter = "port 80") # prn to run the given program whenever we get some packet.
-    # Filter is used to filter the packets based on its type or port for eg :- tcp, arp, port 21, etc. Filter doesn't allow us to filter the http req.
+    # Filter is used to filter the packets based on its type or port for eg :- tcp, arp, port 21, etc. Filter doesn't allow us to filter the http requests.
     scapy.sniff(iface = interface, store = False, prn = process_sniffed_packet)
 
 def get_url(packet):
