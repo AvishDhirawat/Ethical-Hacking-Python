@@ -5,6 +5,7 @@
 import scapy.all as scapy
 import time
 import sys
+import subprocess
 import argparse
 
 def get_arguments(): # Function to get arguments in command line
@@ -55,6 +56,7 @@ def restore(destination_ip, source_ip): # Restore the ARP Table to default
 options = get_arguments()
 target_ip = options.target_ip
 gateway_ip = options.gateway_ip
+subprocess.call("echo 1 > /proc/sys/net/ipv4/ip_forward", shell = True) # Incase the requests are blocked by linux machine (echo 1 > /proc/sys/net/ipv4/ip_forward)
 # Exception Handling
 try:
     while True:
