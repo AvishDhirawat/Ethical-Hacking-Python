@@ -6,7 +6,7 @@
 import netfilterqueue
 import subprocess
 
-subprocess.call("iptables -I FORWARD -j NFQUEUE --queue-num 0")
+subprocess.call("iptables -I FORWARD -j NFQUEUE --queue-num 0", shell = True)
 
 def process_packet(packet):
     print(packet)
@@ -18,4 +18,4 @@ queue = netfilterqueue.NetfilterQueue()
 queue.bind(0, process_packet) # 0 is queue number/id that we given in above command while storing the iptable to a queue.
 queue.run()
 # iptables --flush to delete the iptables we created
-subprocess.call("iptables --flush")
+subprocess.call("iptables --flush", shell = True)

