@@ -1,6 +1,7 @@
 # Ethical Hacking using Python
 Some scripts for the ethical hacking using python desigend by myself and mentored by Zaid Sabih
 Most of the programs takes arguments with them so just type program name in termial and then type -h or --help to get more info.
+0. hello_world.py - Just a print statement.
 1. mac_changer.py - Changes MAC address of given interface.
 2. network_scanner.py - Scan the devices on given network and in given IP range.
 3. arp_spoof.py - Spoof the given target and lets its all request pass through our computer.
