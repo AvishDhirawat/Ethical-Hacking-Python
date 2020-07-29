@@ -12,11 +12,14 @@ def get_arguments(): # Function to get arguments in command line
     parser = argparse.ArgumentParser()
     parser.add_argument('-t', '--target', dest = "target_website", help = "Target website you want to spoof")
     parser.add_argument('-d', '--destination', dest = "destination_website", help = "Destination website you want to forward the target")
+    parser.add_argument('-c', '--choice', dest = "choice", help = "Choice for Intersystem Spoofing(1) and Intrasystem Spoofing(2)")
     options = parser.parse_args()
     if not options.target_website:
         parser.error("[-] Please specify the target webiste, use --help for more info")
     elif not options.destination_website:
         parser.error("[-] Please specify the destination IP, use --help for more info")
+    elif options.choice not in [1,2,"1","2"]:
+        parser.error("[-] Please enter correct options for choice, use --help for more info")
     else:
         return options
 
@@ -54,7 +57,8 @@ try:
     options = get_arguments()
     target_website = options.target_website
     destination_website = options.destination_website
-    choice = input("\n1 - Intersystem DNS Spoofing\n2 - Intrasystem DNS Spoofing\nEnter your choice: ")
+    choice = options.choice
+    #choice = input("\n1 - Intersystem DNS Spoofing\n2 - Intrasystem DNS Spoofing\nEnter your choice: ")
     #print(choice)
     if(choice == 1 or choice == "1"): # Had to add "or" condition so that it supports both python2 and python3
         subprocess.call("iptables -I FORWARD -j NFQUEUE --queue-num 0", shell = True)
