@@ -42,6 +42,7 @@ def change_mac(interface,new_mac):
     #Non Vulnerable Method
     subprocess.call(['ifconfig', interface, 'down'])
     subprocess.call(['ifconfig', interface, 'hw', 'ether', new_mac])
+    #subprocess.call(['iwconfig', interface, 'mode', 'monitor']) #change the mode to monitor
     subprocess.call(['ifconfig', interface, 'up'])
     #subprocess.call(['ifconfig', interface])
 
