@@ -12,7 +12,7 @@ def get_arguments(): # Function to get arguments in command line
     parser = argparse.ArgumentParser()
     parser.add_argument('-t', '--target', dest = "target_website", help = "Target website you want to spoof")
     parser.add_argument('-d', '--destination', dest = "destination_website", help = "Destination website you want to forward the target")
-    parser.add_argument('-c', '--choice', dest = "choice", help = "Choice for Intersystem Spoofing(1) and Intrasystem Spoofing(2)")
+    parser.add_argument('-c', '--choice', dest = "choice", default = 2, help = "Choice for Intersystem Spoofing(1) and Intrasystem Spoofing(2)")
     options = parser.parse_args()
     if not options.target_website:
         parser.error("[-] Please specify the target webiste, use --help for more info")
