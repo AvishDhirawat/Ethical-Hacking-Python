@@ -12,7 +12,7 @@ ack_list = []
 
 def get_arguments(): # Function to get arguments in command line
     parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--choice', dest = "choice", help = "Choice for Intersystem Spoofing(1) and Intrasystem Spoofing(2)")
+    parser.add_argument('-c', '--choice', dest = "choice", default = 2,  help = "Choice for Intersystem Spoofing(1) and Intrasystem Spoofing(2)")
     parser.add_argument('-r', '--replace', dest = "replace_download_link", help = "Link you want to forward the target to download replaced file")
     options = parser.parse_args()
     if options.choice not in [1,2,"1","2"]:
