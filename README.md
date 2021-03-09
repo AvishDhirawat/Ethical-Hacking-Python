@@ -1,6 +1,6 @@
 # Ethical Hacking using Python
 Some scripts for the ethical hacking using python desigend by myself and mentored by Zaid Sabih.
-Most of the programs takes arguments with them so just type program name in termial and then type -h or --help to get more info.
+Most of the programs takes arguments with them so just type program name in terminal and then type -h or --help to get more info.
 
 IMPORTANT - THE PROGRAMS WORKS ONLY ON LINUX BASED SYSTEMS.
 
