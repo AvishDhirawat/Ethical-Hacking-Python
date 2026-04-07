@@ -1,0 +1,86 @@
+{
+  "total_events": 66,
+  "response_status_counts": {
+    "204": 8,
+    "200": 21
+  },
+  "largest_responses_top15": [
+    {
+      "size_bytes": 1469991,
+      "url": "https://cdn.jsdelivr.net/npm/pdfjs-dist@2.14.305/legacy/build/pdf.worker.min.js",
+      "content_type": "application/javascript; charset=utf-8"
+    },
+    {
+      "size_bytes": 918253,
+      "url": "https://portal.pratyakshayurveda.in/api/student/notes/file/1769611474072_Cardiac%20physiology%20class.pdf?Authorization=Bearer%20eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImdhanVtYWxpNzA3M0BnbWFpbC5jb20iLCJfaWQiOiI2N2EyNGZhMGI5NDYwMzdiOGYwNzg2NzIiLCJyb2xlIjoyMDAxLCJpYXQiOjE3NzU1OTMxNDV9.MfVki66MLZw3nOe5gKDAQtERtFvU8S979hUpx9AWq_o",
+      "content_type": "application/pdf"
+    },
+    {
+      "size_bytes": 121837,
+      "url": "https://assets.mediadelivery.net/plyr/3.7.8.4-bn/plyr.polyfilled.min.js",
+      "content_type": "application/javascript"
+    },
+    {
+      "size_bytes": 87533,
+      "url": "https://assets.mediadelivery.net/jquery/jquery-3.7.1.min.js",
+      "content_type": "application/javascript"
+    },
+    {
+      "size_bytes": 53905,
+      "url": "https://iframe.mediadelivery.net/embed/330113/19a666a1-e566-425b-97b2-48b4392c921e?token=3d10c463c8b748c0af18b00f2c12598b0a3369f05433ab8a1e6d4639e0e14b73&expires=1775600351&autoplay=false",
+      "content_type": "text/html; charset=utf-8"
+    },
+    {
+      "size_bytes": 40352,
+      "url": "https://assets.mediadelivery.net/chartist.min.js",
+      "content_type": "application/javascript"
+    },
+    {
+      "size_bytes": 34138,
+      "url": "https://assets.mediadelivery.net/plyr/3.7.8.4-bn/plyr.css",
+      "content_type": "text/css"
+    },
+    {
+      "size_bytes": 25592,
+      "url": "https://assets.mediadelivery.net/pb.js?v=1",
+      "content_type": "application/javascript"
+    },
+    {
+      "size_bytes": 13693,
+      "url": "https://assets.mediadelivery.net/playerjs/0.1.1/player-0.1.1.min.js",
+      "content_type": "application/javascript"
+    },
+    {
+      "size_bytes": 4593,
+      "url": "https://assets.mediadelivery.net/plyr-vr.css",
+      "content_type": "text/css"
+    },
+    {
+      "size_bytes": 3877,
+      "url": "https://assets.mediadelivery.net/session-tracker/1.1.2/session-tracker.js",
+      "content_type": "application/javascript"
+    },
+    {
+      "size_bytes": 3557,
+      "url": "https://assets.mediadelivery.net/playerjs/pjs-implementation.js",
+      "content_type": "application/javascript"
+    },
+    {
+      "size_bytes": 3291,
+      "url": "https://iframe.mediadelivery.net/stream-bundle.js",
+      "content_type": "text/javascript"
+    },
+    {
+      "size_bytes": 3200,
+      "url": "https://assets.mediadelivery.net/pb.css?v=1",
+      "content_type": "text/css"
+    },
+    {
+      "size_bytes": 2831,
+      "url": "https://assets.mediadelivery.net/rum.js",
+      "content_type": "application/javascript"
+    }
+  ],
+  "dump_file": "D:\\Code\\Python\\Ethical-Hacking-Python\\network_dump\\001_target_1\\network_dump.json",
+  "bodies_dir": "D:\\Code\\Python\\Ethical-Hacking-Python\\network_dump\\001_target_1\\bodies"
+}

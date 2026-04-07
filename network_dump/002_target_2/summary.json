@@ -1,0 +1,30 @@
+{
+  "total_events": 155,
+  "response_status_counts": {
+    "204": 4
+  },
+  "largest_responses_top15": [
+    {
+      "size_bytes": 0,
+      "url": "https://e.clarity.ms/collect",
+      "content_type": ""
+    },
+    {
+      "size_bytes": 0,
+      "url": "https://e.clarity.ms/collect",
+      "content_type": ""
+    },
+    {
+      "size_bytes": 0,
+      "url": "https://e.clarity.ms/collect",
+      "content_type": ""
+    },
+    {
+      "size_bytes": 0,
+      "url": "https://e.clarity.ms/collect",
+      "content_type": ""
+    }
+  ],
+  "dump_file": "D:\\Code\\Python\\Ethical-Hacking-Python\\network_dump\\002_target_2\\network_dump.json",
+  "bodies_dir": "D:\\Code\\Python\\Ethical-Hacking-Python\\network_dump\\002_target_2\\bodies"
+}

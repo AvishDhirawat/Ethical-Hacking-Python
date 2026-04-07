@@ -1,0 +1,1 @@
+OK - This is a metrics service by bunny.net for CDN latency optimization.

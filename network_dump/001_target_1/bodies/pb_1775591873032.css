@@ -1,0 +1,141 @@
+body {
+    background-color: gray;
+}
+.sp__base {
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    font-size: 0;
+    text-align: left;
+    box-sizing: border-box;
+    position: relative;
+    user-select: none; /* supported by Chrome and Opera */
+    -webkit-user-select: none; /* Safari */
+    -khtml-user-select: none; /* Konqueror HTML */
+    -moz-user-select: none; /* Firefox */
+    -ms-user-select: none; /* Internet Explorer/Edge */
+    
+}
+
+.pb__shadow {
+    width: 100%;
+    height: 50px;
+    position: absolute;
+    top: -44px;
+    left: 0px;
+    background: linear-gradient(transparent,rgba(0,0,0,.40));
+    background: var(--plyr-video-controls-background,linear-gradient(transparent,rgba(0,0,0,.4)));
+}
+
+.sp__progressbar {
+    width: 100%;
+    height: 9px;
+    box-sizing: border-box;
+    font-size: 0;
+    margin: 0;
+    padding: 0;
+    position: relative;
+    transition: all ease 0.12s;
+    text-align: left;
+    overflow-x: hidden;
+    white-space: nowrap;
+}
+    .sp__progressbar li {
+        display: inline-block;
+        list-style: none;
+        height: 9px;
+        margin: 0;
+        padding: 3px 0;
+        position: relative;
+        top: 0;
+        transition: all ease 0.12s;
+        box-sizing: border-box;
+        position: relative;
+        background-color: transparent;
+        cursor: pointer;
+        overflow-x: hidden;
+    }
+
+    .sp__progressbar.hover {
+        transform: scaleY(1.8);
+        margin-top: 0px;
+    }
+.sp__progressbar li.active {
+    padding: 2px 0;
+}
+
+    .sp__progressbar li .sp__container {
+        width: calc(100% - 2px);
+        left: 1px;
+        height: 100%;
+        position: relative;
+        box-shadow: #00000050 0 0 1px;
+        overflow-x: hidden;
+    }
+
+    .sp__progressbar li .sp__bg {
+        background-color: rgba(255,255,255,0.2);
+        height: 100%;
+        width: 100%;
+        position: absolute;
+        top: 0px;
+        left: 0px;
+        z-index: 0;
+    }
+
+    .sp__progressbar li .sp__section {
+        height: 100%;
+        position: absolute;
+        top: 0px;
+        left: 0px;
+        z-index: 1;
+    }
+
+    .sp__progressbar:hover li {
+        opacity: 0.75;
+    }
+    .sp__progressbar:hover li:hover {
+        opacity: 1;
+    }
+
+.sp__title {
+    position: absolute;
+    bottom: 18px;
+    left: 0px;
+    color: white;
+    font-size: 14px !important;
+    font-weight: 700;
+    text-align: center;
+    text-shadow: 0 0 4px black;
+    opacity: 0;
+    transition: opacity ease 0.12s;
+    line-height: 17px;
+}
+    .sp__title.animated {
+        transition: left ease 0.08s;
+    }
+    .sp__title.active {
+        opacity: 1;
+    }
+
+
+.sp__moment {
+    border: 2px solid #ffffff77;
+    border-radius: 50%;
+    width: 12px;
+    height: 12px;
+    z-index: 5;
+    display: block;
+    position: absolute;
+    top: -1.5px;
+    left: 0px;
+    box-sizing: border-box;
+    background-color: #ffffff77;
+    box-shadow: 0 0 3px #00000055;
+    pointer-events: all;
+}
+    .sp__moment.hover {
+        cursor: pointer;
+        border: 2px solid #fff;
+        background-color: #ffffff99;
+    }
