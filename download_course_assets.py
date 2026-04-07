@@ -87,6 +87,33 @@ def click_tab(page, tab_name: str, timeout_ms: int = 10_000) -> bool:
     return False
 
 
+def click_tab_fuzzy(page, tab_name: str) -> bool:
+    target = (tab_name or "").strip().lower()
+    if not target:
+        return False
+    script = """
+    (tabText) => {
+      const wanted = (tabText || '').toLowerCase().trim();
+      const candidates = Array.from(document.querySelectorAll('button, a, [role="tab"], div, span'));
+      for (const el of candidates) {
+        const txt = (el.innerText || el.textContent || '').toLowerCase().trim();
+        if (!txt) continue;
+        if (txt === wanted || txt.includes(wanted)) {
+          try { el.click(); return true; } catch (e) {}
+        }
+      }
+      return false;
+    }
+    """
+    try:
+        ok = bool(page.evaluate(script, target))
+        if ok:
+            page.wait_for_timeout(1200)
+        return ok
+    except Exception:
+        return False
+
+
 def auto_scroll(page, steps: int = 10, pause_ms: int = 400) -> None:
     for _ in range(steps):
         try:
@@ -193,6 +220,40 @@ def collect_network_urls(page, duration_ms: int = 6_000, do_scroll: bool = False
     finally:
         page.remove_listener("response", on_response)
     return seen_urls
+
+
+def collect_network_media_candidates(page, duration_ms: int = 10_000, do_scroll: bool = False) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def add_url(candidate: str) -> None:
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            ordered.append(candidate)
+
+    def on_response(resp):
+        try:
+            url = resp.url or ""
+            headers = resp.headers or {}
+            ctype = headers.get("content-type", "").lower()
+            low = url.lower()
+            if resp.status >= 400:
+                return
+            if any(ext in low for ext in VIDEO_EXTENSIONS) or "application/vnd.apple.mpegurl" in ctype or "video/" in ctype:
+                add_url(url)
+        except Exception:
+            pass
+
+    page.on("response", on_response)
+    try:
+        loops = max(1, duration_ms // 400)
+        for _ in range(loops):
+            if do_scroll:
+                auto_scroll(page, steps=1, pause_ms=150)
+            page.wait_for_timeout(400)
+    finally:
+        page.remove_listener("response", on_response)
+    return ordered
 
 
 def collect_network_pdf_candidates(page, duration_ms: int = 12_000, do_scroll: bool = True) -> list[str]:
@@ -473,6 +534,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--headless", action="store_true", help="Run browser headless")
     parser.add_argument("--wait-seconds", type=float, default=3.0, help="Extra wait after tab click")
     parser.add_argument("--debug-network", action="store_true", help="Print candidate asset URLs captured from network")
+    parser.add_argument("--video-url", default="", help="Direct video URL fallback")
+    parser.add_argument("--pdf-url", default="", help="Direct PDF URL fallback")
     return parser
 
 
@@ -491,16 +554,24 @@ def main() -> int:
         try:
             maybe_login(page, args)
             page.goto(args.target_url, wait_until="domcontentloaded")
-            page.wait_for_timeout(1500)
+            page.wait_for_timeout(3000)
+            if args.debug_network:
+                print(f"[debug] After target goto: {page.url}")
 
-            if click_tab(page, args.lesson_tab_name):
+            if click_tab(page, args.lesson_tab_name) or click_tab_fuzzy(page, args.lesson_tab_name):
                 time.sleep(args.wait_seconds)
             else:
                 print(f"Warning: Could not click lesson tab '{args.lesson_tab_name}'. Trying current view.")
 
             lesson_urls = collect_candidate_urls(page)
             lesson_urls.update(collect_network_urls(page, duration_ms=6_000, do_scroll=False))
+            for media_url in collect_network_media_candidates(page, duration_ms=8_000, do_scroll=False):
+                lesson_urls.add(media_url)
+                if args.debug_network:
+                    print(f"[debug] Media candidate: {media_url}")
             video_url = pick_video_url(lesson_urls)
+            if args.video_url:
+                video_url = args.video_url
             saved_video = None
             if video_url:
                 target_origin = ""
@@ -518,7 +589,7 @@ def main() -> int:
             else:
                 print("No obvious direct video URL found in Lesson tab.")
 
-            if click_tab(page, args.notes_tab_name):
+            if click_tab(page, args.notes_tab_name) or click_tab_fuzzy(page, args.notes_tab_name):
                 time.sleep(args.wait_seconds)
             else:
                 print(f"Warning: Could not click notes tab '{args.notes_tab_name}'. Trying current view.")
@@ -534,6 +605,8 @@ def main() -> int:
             for candidate in captured_pdf_urls:
                 notes_urls.add(candidate)
             pdf_url = pick_pdf_url(notes_urls)
+            if args.pdf_url:
+                pdf_url = args.pdf_url
             saved_pdf = captured_pdf_file
             pdf_candidates_ordered = []
             if pdf_url:
