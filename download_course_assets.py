@@ -239,9 +239,66 @@ def collect_network_pdf_candidates(page, duration_ms: int = 12_000, do_scroll: b
     return ordered
 
 
-def save_via_authenticated_request(context, url: str, out_file: Path, timeout_ms: int = 90_000) -> bool:
+def capture_pdf_response_body(page, out_dir: Path, duration_ms: int = 12_000, do_scroll: bool = True, debug: bool = False):
+    saved_pdf: Path | None = None
+    seen_urls: list[str] = []
+
+    def on_response(resp):
+        nonlocal saved_pdf
+        if saved_pdf is not None:
+            return
+        try:
+            url = resp.url or ""
+            headers = resp.headers or {}
+            ctype = headers.get("content-type", "").lower()
+            cdisp = headers.get("content-disposition", "").lower()
+            low_url = url.lower()
+            if resp.status >= 400:
+                return
+            if (
+                ".pdf" in low_url
+                or "application/pdf" in ctype
+                or ".pdf" in cdisp
+                or "/notes/file/" in low_url
+            ):
+                seen_urls.append(url)
+                body = resp.body()
+                if not body:
+                    return
+                if body.startswith(b"%PDF") or "application/pdf" in ctype or ".pdf" in low_url:
+                    pdf_name = guess_filename_from_url(url, "notes.pdf")
+                    if not pdf_name.lower().endswith(".pdf"):
+                        pdf_name += ".pdf"
+                    out_file = unique_file(out_dir / pdf_name)
+                    out_file.write_bytes(body)
+                    saved_pdf = out_file
+                    if debug:
+                        print(f"[debug] Saved PDF directly from response: {url}")
+        except Exception:
+            pass
+
+    page.on("response", on_response)
     try:
-        response = context.request.get(url, timeout=timeout_ms)
+        loops = max(1, duration_ms // 400)
+        for _ in range(loops):
+            if do_scroll:
+                auto_scroll(page, steps=1, pause_ms=150)
+            page.wait_for_timeout(400)
+            if saved_pdf is not None:
+                break
+    finally:
+        page.remove_listener("response", on_response)
+    return saved_pdf, seen_urls
+
+
+def save_via_authenticated_request(context, url: str, out_file: Path, timeout_ms: int = 90_000, referer: str = "", origin: str = "") -> bool:
+    try:
+        headers = {}
+        if referer:
+            headers["Referer"] = referer
+        if origin:
+            headers["Origin"] = origin
+        response = context.request.get(url, timeout=timeout_ms, headers=headers)
         if not response.ok:
             return False
         body = response.body()
@@ -251,7 +308,7 @@ def save_via_authenticated_request(context, url: str, out_file: Path, timeout_ms
         return False
 
 
-def save_video_with_fallback(context, video_url: str, out_dir: Path, fallback_name: str) -> Path | None:
+def save_video_with_fallback(context, video_url: str, out_dir: Path, fallback_name: str, referer: str = "", origin: str = "") -> Path | None:
     ext = ".mp4"
     for candidate_ext in VIDEO_EXTENSIONS:
         if candidate_ext in video_url.lower():
@@ -260,7 +317,7 @@ def save_video_with_fallback(context, video_url: str, out_dir: Path, fallback_na
 
     video_name = guess_filename_from_url(video_url, f"{fallback_name}{ext}")
     video_file = unique_file(out_dir / video_name)
-    if save_via_authenticated_request(context, video_url, video_file):
+    if save_via_authenticated_request(context, video_url, video_file, referer=referer, origin=origin):
         if ext == ".m3u8":
             ffmpeg_path = shutil.which("ffmpeg")
             if ffmpeg_path:
@@ -415,6 +472,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out-dir", default="downloads", help="Output folder")
     parser.add_argument("--headless", action="store_true", help="Run browser headless")
     parser.add_argument("--wait-seconds", type=float, default=3.0, help="Extra wait after tab click")
+    parser.add_argument("--debug-network", action="store_true", help="Print candidate asset URLs captured from network")
     return parser
 
 
@@ -445,7 +503,14 @@ def main() -> int:
             video_url = pick_video_url(lesson_urls)
             saved_video = None
             if video_url:
-                saved_video = save_video_with_fallback(context, video_url, out_dir, "lesson_video")
+                target_origin = ""
+                try:
+                    target_origin = f"{urlparse(args.target_url).scheme}://{urlparse(args.target_url).netloc}"
+                except Exception:
+                    pass
+                saved_video = save_video_with_fallback(
+                    context, video_url, out_dir, "lesson_video", referer=args.target_url, origin=target_origin
+                )
                 if saved_video:
                     print(f"Saved lesson video: {saved_video}")
                 else:
@@ -461,10 +526,15 @@ def main() -> int:
             notes_urls = collect_candidate_urls(page)
             notes_urls.update(collect_network_urls(page, duration_ms=10_000, do_scroll=True))
             network_pdf_candidates = collect_network_pdf_candidates(page, duration_ms=12_000, do_scroll=True)
+            captured_pdf_file, captured_pdf_urls = capture_pdf_response_body(
+                page, out_dir, duration_ms=12_000, do_scroll=True, debug=args.debug_network
+            )
             for candidate in network_pdf_candidates:
                 notes_urls.add(candidate)
+            for candidate in captured_pdf_urls:
+                notes_urls.add(candidate)
             pdf_url = pick_pdf_url(notes_urls)
-            saved_pdf = None
+            saved_pdf = captured_pdf_file
             pdf_candidates_ordered = []
             if pdf_url:
                 pdf_candidates_ordered.append(pdf_url)
@@ -476,11 +546,20 @@ def main() -> int:
                     pdf_candidates_ordered.append(candidate)
 
             for candidate in pdf_candidates_ordered:
+                if args.debug_network:
+                    print(f"[debug] PDF candidate: {candidate}")
                 pdf_name = guess_filename_from_url(candidate, "notes.pdf")
                 if not pdf_name.lower().endswith(".pdf"):
                     pdf_name += ".pdf"
                 pdf_file = unique_file(out_dir / pdf_name)
-                if save_via_authenticated_request(context, candidate, pdf_file):
+                target_origin = ""
+                try:
+                    target_origin = f"{urlparse(args.target_url).scheme}://{urlparse(args.target_url).netloc}"
+                except Exception:
+                    pass
+                if save_via_authenticated_request(
+                    context, candidate, pdf_file, referer=args.target_url, origin=target_origin
+                ):
                     saved_pdf = pdf_file
                     print(f"Saved notes PDF: {pdf_file}")
                     break
