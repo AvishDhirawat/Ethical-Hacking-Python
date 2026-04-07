@@ -1,0 +1,11 @@
+# Requirements for Ethical-Hacking-Python project
+
+scapy
+netfilterqueue
+
+# Standard library modules (no need to install):
+# subprocess, argparse, re, time, sys
+
+# No external dependencies detected for hello_world.py
+
+# If you use additional features, add
