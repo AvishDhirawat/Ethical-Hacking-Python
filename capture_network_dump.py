@@ -33,6 +33,52 @@ def safe_name(value: str, fallback: str) -> str:
     return text or fallback
 
 
+def click_tab(page, tab_name: str, timeout_ms: int = 10_000) -> bool:
+    selectors = [
+        f'role=tab[name="{tab_name}"]',
+        f'text="{tab_name}"',
+        f'button:has-text("{tab_name}")',
+        f'a:has-text("{tab_name}")',
+    ]
+    for selector in selectors:
+        try:
+            loc = page.locator(selector).first
+            if loc.count() > 0:
+                loc.click(timeout=timeout_ms)
+                page.wait_for_timeout(1200)
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def click_tab_fuzzy(page, tab_name: str) -> bool:
+    target = (tab_name or "").strip().lower()
+    if not target:
+        return False
+    script = """
+    (tabText) => {
+      const wanted = (tabText || '').toLowerCase().trim();
+      const candidates = Array.from(document.querySelectorAll('button, a, [role="tab"], div, span'));
+      for (const el of candidates) {
+        const txt = (el.innerText || el.textContent || '').toLowerCase().trim();
+        if (!txt) continue;
+        if (txt === wanted || txt.includes(wanted)) {
+          try { el.click(); return true; } catch (e) {}
+        }
+      }
+      return false;
+    }
+    """
+    try:
+        ok = bool(page.evaluate(script, target))
+        if ok:
+            page.wait_for_timeout(1200)
+        return ok
+    except Exception:
+        return False
+
+
 def guess_ext_from_content_type(content_type: str) -> str:
     ctype = (content_type or "").lower()
     if "application/pdf" in ctype:
@@ -67,9 +113,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--manual-login", action="store_true", help="Login manually in browser and press Enter")
     parser.add_argument("--username", default="", help="Optional username for auto-login")
     parser.add_argument("--password", default="", help="Optional password for auto-login")
-    parser.add_argument("--username-selector", default='input[type="email"], input[name="email"], input[name="username"], input[name="mobile"], input[type="tel"], input[type="text"]')
+    parser.add_argument("--username-selector", default='input[type="email"], input[name="email"], input[name="username"], input[name="mobile"], input[type="tel"], input[placeholder*="Email"], input[placeholder*="email"], input[placeholder*="Mobile"], input[placeholder*="mobile"], input[type="text"]')
     parser.add_argument("--password-selector", default='input[type="password"], input[name="password"]')
     parser.add_argument("--submit-selector", default="", help="Optional selector for login button")
+    parser.add_argument("--login-wait-seconds", type=int, default=20, help="How long to wait for login form")
+    parser.add_argument("--notes-tab-name", default="Notes", help='Notes tab label (default: "Notes")')
     parser.add_argument("--capture-seconds", type=int, default=35, help="How long to capture after target opens")
     parser.add_argument("--scroll-steps", type=int, default=40, help="Auto-scroll steps during capture")
     parser.add_argument("--save-bodies", action="store_true", help="Save response bodies to disk")
@@ -97,6 +145,8 @@ def prompt_if_missing(args: argparse.Namespace) -> None:
                 break
             collected.append(u)
         args.target_urls = collected
+    if not args.notes_tab_name:
+        args.notes_tab_name = input('Notes tab name [Notes]: ').strip() or "Notes"
 
 
 def is_image_response(resource_type: str, content_type: str, url: str) -> bool:
@@ -108,6 +158,81 @@ def is_image_response(resource_type: str, content_type: str, url: str) -> bool:
     if ct.startswith("image/"):
         return True
     return low.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".bmp", ".avif"))
+
+
+def get_request_post_payload(req) -> tuple[str, str]:
+    # Playwright may fail decoding binary/gzip request body as UTF-8 on req.post_data.
+    try:
+        text = req.post_data
+        if text is None:
+            return "", ""
+        return text, ""
+    except Exception:
+        pass
+
+    try:
+        buf = req.post_data_buffer
+        if callable(buf):
+            buf = buf()
+        if isinstance(buf, (bytes, bytearray)):
+            return "", base64.b64encode(bytes(buf)).decode("ascii")
+    except Exception:
+        pass
+    return "", ""
+
+
+def first_visible_locator(page_or_frame, selector: str):
+    loc = page_or_frame.locator(selector)
+    count = loc.count()
+    for i in range(count):
+        item = loc.nth(i)
+        try:
+            if item.is_visible():
+                return item
+        except Exception:
+            continue
+    return loc.first
+
+
+def find_login_fields(page, user_selector: str, pass_selector: str, timeout_ms: int = 20_000):
+    end_at = time.time() + (timeout_ms / 1000.0)
+    while time.time() < end_at:
+        scopes = [page]
+        try:
+            scopes.extend(page.frames)
+        except Exception:
+            pass
+        for scope in scopes:
+            try:
+                user_loc = first_visible_locator(scope, user_selector)
+                pass_loc = first_visible_locator(scope, pass_selector)
+                if user_loc.count() > 0 and pass_loc.count() > 0:
+                    return scope, user_loc, pass_loc
+            except Exception:
+                continue
+        page.wait_for_timeout(300)
+    return None, None, None
+
+
+def dismiss_success_popup(page, timeout_ms: int = 4_000) -> None:
+    ok_selectors = [
+        'role=button[name="OK"]',
+        'button:has-text("OK")',
+        'button:has-text("Ok")',
+        'text="OK"',
+    ]
+    end_at = time.time() + (timeout_ms / 1000.0)
+    while time.time() < end_at:
+        for selector in ok_selectors:
+            try:
+                loc = page.locator(selector).first
+                if loc.count() > 0 and loc.is_visible():
+                    loc.click(timeout=700)
+                    page.wait_for_timeout(300)
+                    break
+            except Exception:
+                continue
+        page.wait_for_timeout(200)
 
 
 def load_targets(args: argparse.Namespace) -> list[str]:
@@ -138,16 +263,19 @@ def load_targets(args: argparse.Namespace) -> list[str]:
 
 
 def do_auto_login(page, args: argparse.Namespace) -> None:
-    user = page.locator(args.username_selector).first
-    pwd = page.locator(args.password_selector).first
-    if user.count() == 0 or pwd.count() == 0:
+    page.wait_for_timeout(1200)
+    scope, user, pwd = find_login_fields(
+        page, args.username_selector, args.password_selector, timeout_ms=args.login_wait_seconds * 1000
+    )
+    if not scope or not user or not pwd or user.count() == 0 or pwd.count() == 0:
         raise RuntimeError("Could not find login fields. Use --manual-login or provide selectors.")
     user.fill(args.username)
     pwd.fill(args.password)
     if args.submit_selector:
-        page.locator(args.submit_selector).first.click()
+        first_visible_locator(scope, args.submit_selector).click()
     else:
         pwd.press("Enter")
+    dismiss_success_popup(page)
     page.wait_for_timeout(2500)
 
 
@@ -187,21 +315,33 @@ def capture_target(page, args: argparse.Namespace, target_url: str, out_dir: Pat
     seq = {"n": 0}
 
     def on_request(req):
-        if not args.include_images and (req.resource_type or "").lower() == "image":
-            return
-        seq["n"] += 1
-        rid = f"req_{seq['n']}"
-        rec = {
-            "id": rid,
-            "phase": "request",
-            "time": time.time(),
-            "url": req.url,
-            "method": req.method,
-            "resource_type": req.resource_type,
-            "headers": req.headers,
-            "post_data": req.post_data,
-        }
-        entries.append(rec)
+        try:
+            if not args.include_images and (req.resource_type or "").lower() == "image":
+                return
+            seq["n"] += 1
+            rid = f"req_{seq['n']}"
+            post_data_text, post_data_b64 = get_request_post_payload(req)
+            rec = {
+                "id": rid,
+                "phase": "request",
+                "time": time.time(),
+                "url": req.url,
+                "method": req.method,
+                "resource_type": req.resource_type,
+                "headers": req.headers,
+                "post_data": post_data_text,
+                "post_data_b64": post_data_b64,
+            }
+            entries.append(rec)
+        except Exception as ex:
+            entries.append(
+                {
+                    "phase": "request_error",
+                    "time": time.time(),
+                    "url": getattr(req, "url", ""),
+                    "error": str(ex),
+                }
+            )
 
     def on_response(resp):
         try:
@@ -258,6 +398,12 @@ def capture_target(page, args: argparse.Namespace, target_url: str, out_dir: Pat
         page.goto(target_url, wait_until="domcontentloaded")
         print(f"Target page opened; capturing network: {target_url}")
         page.wait_for_timeout(2000)
+        if click_tab(page, args.notes_tab_name) or click_tab_fuzzy(page, args.notes_tab_name):
+            print(f"Opened notes tab: {args.notes_tab_name}")
+            page.wait_for_timeout(1200)
+        else:
+            print(f"Warning: Could not click notes tab '{args.notes_tab_name}'. Capturing current view.")
+
         per_step_ms = max(120, int((args.capture_seconds * 1000) / max(1, args.scroll_steps)))
         for _ in range(args.scroll_steps):
             page.mouse.wheel(0, 1300)
