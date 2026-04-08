@@ -17,6 +17,7 @@ import getpass
 import json
 import re
 import time
+from collections import deque
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -49,7 +50,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-url", default="", help="Single target page URL")
     parser.add_argument("--target-urls", nargs="*", default=[], help="Multiple target page URLs")
     parser.add_argument("--targets-file", default="", help="Text file with one target URL per line")
-    parser.add_argument("--api-url", default="", help="API base URL, e.g. https://portal.example.com/api")
     parser.add_argument("--manual-login", action="store_true", help="Login manually in browser and press Enter")
     parser.add_argument("--username", default="", help="Username/email/mobile for auto login")
     parser.add_argument("--password", default="", help="Password for auto login")
@@ -61,6 +61,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scroll-steps", type=int, default=25, help="Scroll steps per target")
     parser.add_argument("--probe-common", action="store_true", help="Probe common API/doc endpoints")
     parser.add_argument("--download-notes", action="store_true", help="Download discovered note PDFs")
+    parser.add_argument("--auth-url", default="", help="API auth URL for username/password login")
+    parser.add_argument("--auth-user-field", default="email", help="JSON field name for username in auth request")
+    parser.add_argument("--auth-pass-field", default="password", help="JSON field name for password in auth request")
+    parser.add_argument("--seed-endpoint", action="append", default=[], help="Seed API endpoint path or URL, repeatable")
+    parser.add_argument("--max-crawl", type=int, default=200, help="Max API endpoints to crawl in API-auth mode")
+    parser.add_argument("--api-auth-only", action="store_true", help="Use API-auth crawl mode instead of browser flow")
     parser.add_argument("--out-dir", default="api_discovery", help="Output folder")
     parser.add_argument("--headless", action="store_true", help="Run browser headless")
     return parser.parse_args()
@@ -74,10 +80,15 @@ def prompt_if_missing(args: argparse.Namespace) -> None:
             args.username = input("Username / Email / Mobile: ").strip()
         if not args.password:
             args.password = getpass.getpass("Password: ")
-    if not args.target_url and not args.target_urls and not args.targets_file and not args.api_url:
-        args.api_url = clean_cli_value(input("API URL (e.g. https://portal.example.com/api): "))
     if not args.target_url and not args.target_urls and not args.targets_file:
-        print("No target URLs provided. The script will discover from API URL/probing only.")
+        print("Enter target URLs one by one. Leave blank and press Enter to finish.")
+        vals = []
+        while True:
+            u = clean_cli_value(input(f"Target URL #{len(vals) + 1}: "))
+            if not u:
+                break
+            vals.append(u)
+        args.target_urls = vals
 
 
 def load_targets(args: argparse.Namespace) -> list[str]:
@@ -101,6 +112,8 @@ def load_targets(args: argparse.Namespace) -> list[str]:
         if t not in seen:
             seen.add(t)
             dedup.append(t)
+    if not dedup:
+        raise ValueError("No targets provided.")
     return dedup
 
 
@@ -170,6 +183,40 @@ def normalize_endpoint(url: str) -> str:
         return url
 
 
+def deep_strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from deep_strings(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from deep_strings(v)
+
+
+def extract_jwt(value) -> str:
+    jwt_re = re.compile(r"eyJ[A-Za-z0-9_\-]+?\.[A-Za-z0-9_\-]+?\.[A-Za-z0-9_\-]+")
+    if isinstance(value, str):
+        m = jwt_re.search(value)
+        return m.group(0) if m else ""
+    for s in deep_strings(value):
+        m = jwt_re.search(s)
+        if m:
+            return m.group(0)
+    return ""
+
+
+def absolutize(base_origin: str, endpoint: str) -> str:
+    e = (endpoint or "").strip()
+    if not e:
+        return ""
+    if e.startswith("http://") or e.startswith("https://"):
+        return e
+    if not e.startswith("/"):
+        e = "/" + e
+    return base_origin.rstrip("/") + e
+
+
 def filename_from_url(url: str, fallback: str) -> str:
     try:
         parsed = urlparse(url)
@@ -188,30 +235,152 @@ def add_video_chapter_from_url(url: str, out_set: set[str]) -> None:
         out_set.add(m.group(2))
 
 
-def extract_urls_from_object(obj, out_urls: set[str]) -> None:
-    if isinstance(obj, dict):
-        for v in obj.values():
-            extract_urls_from_object(v, out_urls)
-        return
-    if isinstance(obj, list):
-        for v in obj:
-            extract_urls_from_object(v, out_urls)
-        return
-    if isinstance(obj, str):
-        text = obj.strip()
-        if text.startswith("http://") or text.startswith("https://"):
-            out_urls.add(text)
-        for m in re.findall(r"https?://[^\s\"'<>]+", text):
-            out_urls.add(m)
+def run_api_auth_crawl(args, out_dir: Path):
+    endpoint_map: dict[str, dict] = {}
+    notes_urls: set[str] = set()
+    embed_urls: set[str] = set()
+    chapter_ids: set[str] = set()
+    bunny_ids: set[str] = set()
+    downloaded = 0
 
+    if not args.auth_url:
+        raise ValueError("--auth-url is required when --api-auth-only is used.")
+    auth_url = clean_cli_value(args.auth_url)
+    parsed_auth = urlparse(auth_url)
+    base_origin = f"{parsed_auth.scheme}://{parsed_auth.netloc}"
 
-def append_auth_query(url: str, token: str) -> str:
-    if not token:
-        return url
-    if "Authorization=Bearer" in url or "Authorization=Bearer%20" in url:
-        return url
-    sep = "&" if "?" in url else "?"
-    return f"{url}{sep}Authorization=Bearer%20{token}"
+    with sync_playwright() as p:
+        reqctx = p.request.new_context()
+        payload = {
+            args.auth_user_field: args.username,
+            args.auth_pass_field: args.password,
+        }
+        auth_resp = reqctx.post(auth_url, data=payload, timeout=30000)
+        if not auth_resp.ok:
+            raise RuntimeError(f"Auth failed: HTTP {auth_resp.status}")
+        try:
+            auth_json = auth_resp.json()
+        except Exception:
+            auth_json = {"raw": auth_resp.text()}
+        token = extract_jwt(auth_json)
+        if not token:
+            token = extract_jwt(auth_resp.text())
+        if not token:
+            raise RuntimeError("Could not extract bearer token from auth response.")
+
+        headers = {"Authorization": f"Bearer {token}"}
+        reqctx.dispose()
+        reqctx = p.request.new_context(extra_http_headers=headers)
+
+        queue = deque()
+        seen = set()
+        seeds = list(args.seed_endpoint or [])
+        if args.probe_common:
+            seeds.extend(COMMON_PROBE_PATHS)
+        seeds.extend([
+            "/api/student/myVideos",
+            "/api/student/notes",
+            "/api/student/chapters",
+            "/api/student/courses",
+        ])
+        for s in seeds:
+            u = absolutize(base_origin, s)
+            if u:
+                queue.append(u)
+
+        while queue and len(seen) < args.max_crawl:
+            url = queue.popleft()
+            if url in seen:
+                continue
+            seen.add(url)
+            try:
+                r = reqctx.get(url, timeout=20000)
+            except Exception:
+                continue
+
+            key = f"GET {normalize_endpoint(url)}"
+            endpoint_map[key] = {
+                "method": "GET",
+                "url": url,
+                "endpoint": normalize_endpoint(url),
+                "host": urlparse(url).netloc,
+                "status": r.status,
+                "content_type": (r.headers or {}).get("content-type", ""),
+            }
+
+            ctype = ((r.headers or {}).get("content-type", "") or "").lower()
+            if r.ok and ("application/pdf" in ctype or "/api/student/notes/file/" in url.lower()):
+                notes_urls.add(url)
+                continue
+
+            body_text = ""
+            body_json = None
+            if "application/json" in ctype:
+                try:
+                    body_json = r.json()
+                except Exception:
+                    pass
+            if body_json is None:
+                try:
+                    body_text = r.text()
+                except Exception:
+                    body_text = ""
+
+            candidates = list(deep_strings(body_json)) if body_json is not None else [body_text]
+            for s in candidates:
+                if not isinstance(s, str):
+                    continue
+                low = s.lower().strip()
+                if not low:
+                    continue
+                if "iframe.mediadelivery.net/embed/" in low:
+                    embed_urls.add(s.strip())
+                if "/api/student/notes/file/" in low:
+                    full = absolutize(base_origin, s) if s.startswith("/") else s
+                    notes_urls.add(full.strip())
+                if "/api/" in low and ("http://" in low or "https://" in low or low.startswith("/api/")):
+                    full = absolutize(base_origin, s) if s.startswith("/") else s
+                    if full and full not in seen:
+                        queue.append(full)
+                add_video_chapter_from_url(s, chapter_ids)
+
+            if isinstance(body_json, dict):
+                data = body_json.get("data")
+                rows = data if isinstance(data, list) else [data] if isinstance(data, dict) else []
+                for item in rows:
+                    if not isinstance(item, dict):
+                        continue
+                    chapter = item.get("chapterID")
+                    if isinstance(chapter, str) and chapter.strip():
+                        chapter_ids.add(chapter.strip())
+                    bunny = item.get("bunnyID")
+                    if isinstance(bunny, str) and bunny.strip():
+                        bunny_ids.add(bunny.strip())
+                    secure = item.get("secureEmbedUrl")
+                    if isinstance(secure, str) and secure.strip():
+                        embed_urls.add(secure.strip())
+
+        notes_dir = out_dir / "notes_pdfs"
+        if args.download_notes:
+            notes_dir.mkdir(parents=True, exist_ok=True)
+            for idx, url in enumerate(sorted(notes_urls), start=1):
+                try:
+                    rr = reqctx.get(url, timeout=30000)
+                    if not rr.ok:
+                        continue
+                    body = rr.body()
+                    ctype = ((rr.headers or {}).get("content-type", "") or "").lower()
+                    if body and (body.startswith(b"%PDF") or "application/pdf" in ctype):
+                        name = filename_from_url(url, f"note_{idx}.pdf")
+                        if not name.lower().endswith(".pdf"):
+                            name += ".pdf"
+                        (notes_dir / name).write_bytes(body)
+                        downloaded += 1
+                except Exception:
+                    continue
+        reqctx.dispose()
+
+    return endpoint_map, notes_urls, embed_urls, chapter_ids, bunny_ids, downloaded
 
 
 def main() -> int:
@@ -229,10 +398,33 @@ def main() -> int:
     embed_urls: set[str] = set()
     chapter_ids: set[str] = set()
     bunny_ids: set[str] = set()
-    auth_token = ""
-    base_host = ""
     downloaded = 0
 
+    if args.api_auth_only:
+        endpoint_map, notes_urls, embed_urls, chapter_ids, bunny_ids, downloaded = run_api_auth_crawl(args, out_dir)
+        discovered = sorted(endpoint_map.values(), key=lambda x: (x["host"], x["endpoint"], x["method"]))
+        data = {"total_endpoints": len(discovered), "endpoints": discovered}
+        json_file = out_dir / "api_endpoints.json"
+        txt_file = out_dir / "api_endpoints.txt"
+        json_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        txt_file.write_text("\n".join([f'{e["method"]} {e["url"]} [status={e["status"]}]' for e in discovered]), encoding="utf-8")
+        notes_list = sorted(notes_urls)
+        embed_list = sorted(embed_urls)
+        chapters_list = sorted(chapter_ids)
+        bunny_list = sorted(bunny_ids)
+        (out_dir / "notes_pdf_urls.json").write_text(json.dumps({"total": len(notes_list), "urls": notes_list}, indent=2, ensure_ascii=False), encoding="utf-8")
+        (out_dir / "notes_pdf_urls.txt").write_text("\n".join(notes_list), encoding="utf-8")
+        (out_dir / "secure_embed_urls.json").write_text(json.dumps({"total": len(embed_list), "urls": embed_list}, indent=2, ensure_ascii=False), encoding="utf-8")
+        (out_dir / "secure_embed_urls.txt").write_text("\n".join(embed_list), encoding="utf-8")
+        (out_dir / "chapter_ids.json").write_text(json.dumps({"total": len(chapters_list), "chapter_ids": chapters_list}, indent=2, ensure_ascii=False), encoding="utf-8")
+        (out_dir / "chapter_ids.txt").write_text("\n".join(chapters_list), encoding="utf-8")
+        (out_dir / "bunny_ids.json").write_text(json.dumps({"total": len(bunny_list), "bunny_ids": bunny_list}, indent=2, ensure_ascii=False), encoding="utf-8")
+        (out_dir / "bunny_ids.txt").write_text("\n".join(bunny_list), encoding="utf-8")
+        print(f"Downloaded note PDFs: {downloaded}" if args.download_notes else "Note downloading disabled.")
+        print(f"Total endpoints discovered: {len(discovered)}")
+        return 0
+
+    base_host = ""
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=args.headless)
         context = browser.new_context()
@@ -265,15 +457,6 @@ def main() -> int:
                 if "application/json" in ctype:
                     try:
                         payload = resp.json()
-                        found_urls: set[str] = set()
-                        extract_urls_from_object(payload, found_urls)
-                        for u in found_urls:
-                            lu = u.lower()
-                            if "/api/student/notes/file/" in lu:
-                                notes_urls.add(u)
-                            if "iframe.mediadelivery.net/embed/" in lu:
-                                embed_urls.add(u)
-                            add_video_chapter_from_url(u, chapter_ids)
                         if isinstance(payload, dict):
                             data = payload.get("data")
                             if isinstance(data, list):
@@ -302,41 +485,6 @@ def main() -> int:
 
         try:
             maybe_login(page, args)
-            if args.api_url:
-                args.api_url = clean_cli_value(args.api_url)
-                parsed_api = urlparse(args.api_url)
-                if parsed_api.scheme and parsed_api.netloc:
-                    base_host = f"{parsed_api.scheme}://{parsed_api.netloc}"
-            try:
-                values = page.evaluate(
-                    """
-                    () => {
-                      const vals = [];
-                      try {
-                        for (let i = 0; i < localStorage.length; i++) {
-                          const k = localStorage.key(i);
-                          vals.push(String(localStorage.getItem(k) || ""));
-                        }
-                      } catch (e) {}
-                      try {
-                        for (let i = 0; i < sessionStorage.length; i++) {
-                          const k = sessionStorage.key(i);
-                          vals.push(String(sessionStorage.getItem(k) || ""));
-                        }
-                      } catch (e) {}
-                      return vals;
-                    }
-                    """
-                ) or []
-                jwt_re = re.compile(r"eyJ[A-Za-z0-9_\-]+?\.[A-Za-z0-9_\-]+?\.[A-Za-z0-9_\-]+")
-                for raw in values:
-                    if isinstance(raw, str):
-                        m = jwt_re.search(raw)
-                        if m:
-                            auth_token = m.group(0)
-                            break
-            except Exception:
-                pass
             for i, target in enumerate(targets, start=1):
                 print(f"[{i}/{len(targets)}] Visiting {target}")
                 page.goto(target, wait_until="domcontentloaded")
@@ -366,31 +514,11 @@ def main() -> int:
                         }
                     except Exception:
                         continue
-            elif not targets and args.api_url:
-                # If user only provides API URL, still hit it once.
-                try:
-                    u = clean_cli_value(args.api_url)
-                    r = context.request.get(u, timeout=15000)
-                    key = f"GET {normalize_endpoint(u)}"
-                    endpoint_map[key] = {
-                        "method": "GET",
-                        "url": u,
-                        "endpoint": normalize_endpoint(u),
-                        "host": urlparse(u).netloc,
-                        "status": r.status,
-                        "content_type": (r.headers or {}).get("content-type", ""),
-                    }
-                except Exception:
-                    pass
             notes_list = sorted(notes_urls)
             if args.download_notes and notes_list:
                 for idx, url in enumerate(notes_list, start=1):
                     try:
-                        final_url = append_auth_query(url, auth_token)
-                        headers = {}
-                        if auth_token:
-                            headers["Authorization"] = f"Bearer {auth_token}"
-                        resp = context.request.get(final_url, timeout=30000, headers=headers)
+                        resp = context.request.get(url, timeout=30000)
                         if not resp.ok:
                             continue
                         body = resp.body()
